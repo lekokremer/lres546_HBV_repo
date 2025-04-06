@@ -88,7 +88,7 @@ Other columns in this data include:
 **RHmin, RHmax** - Relative humidity daily min and max, also from GridMET, accessed through Climate Engine
 **SWEdiff.mm, Pdiff.mm and runoff_input.mm** - all daily outputs of a temperature based snowmelt model (the same as in the snowmelt module). runoff_input is the estimated daily input to the stream from melted snow and liquid precipitation combined.
 
-**Q1 (3 pnts) Generate script (including plots) that can be used to evaluate the structure of the dataset and the duration and consistency of the data. The submitted plot should show at least two time series of 'indata' (2 variables on y, date on x), but be sure to check every column for yourself. Do you see any potential issues like missing data or unexpected values?**
+**Q1 (4 pnts) Generate script (including plots) that can be used to evaluate the structure of the dataset and the duration and consistency of the data. The submitted plot should show at least two time series of 'indata' (2 variables on y, date on x), but be sure to check every column for yourself. Do you see any potential issues like missing data or unexpected values?**
 ANSWER:
 
 
@@ -280,7 +280,7 @@ indata_analysis
 
 ```
 
-**Q3 (2 pts) The provided PET data was calculated just using min and max daily air temperature using a Hargreaves approach. View your annual totals for PET and compare it to the amount of precipitation. Are those values reasonable? What can you say about the timing of water demand (PET) and availability (melt and rain)? IMPORTANT: Use runoff_input_mm here and explain why it wouldn't make sense to use weighted_precip.mm.**  
+**Q3 (3 pts) The provided PET data was calculated just using min and max daily air temperature using a Hargreaves approach. View your annual totals for PET and compare it to the amount of precipitation. Are those values reasonable? What can you say about the timing of water demand (PET) and availability (melt and rain)? IMPORTANT: Use runoff_input_mm here and explain why it wouldn't make sense to use weighted_precip.mm.**  
 ANSWER: 
 
 
@@ -298,7 +298,7 @@ print(residual_water)
 
 By subtracting discharge and PET from runoff_input, we’re essentially examining the residual water. This could represent the amount of water available to the system after accounting for the demand (PET) and the outflow (discharge).
 
-**Q4 (3pnts) Consider the evapotranspiration module and the discussion potential and actual evapotranspiration. Why do you think PET yields estimates of negative residual water in this high elevation, semi-arid system?**
+**Q4 (4pnts) Consider the evapotranspiration module and the discussion potential and actual evapotranspiration. Why do you think PET yields estimates of negative residual water in this high elevation, semi-arid system?**
 ANSWER:
 
 
@@ -570,13 +570,15 @@ ggplotly(q_plot)
 
 ```
 
-**Q6. (3 pts) What is the role of the model parameters in representing hydrological processes? What is one effective method to calibrate these parameters without relying on manual adjustment?**
+**Q6. (5 pts) What is the role of the model parameters in representing hydrological processes? What is one effective method to calibrate these parameters without relying on manual adjustment?**
 
 Answer:  
 
-### More plots
+### More exploratory/demonstrative plots
 
 ```{r}
+
+## DON'T forget to remove the warm up period if you want to calculate NSE or KGE
 # Swe
 swe_plot <- ggplot(data = HBVRun) +
   geom_line(aes(x = Date, y = SWEobs, color = "SWEobs")) + # SWEobs
@@ -615,8 +617,4 @@ storage_plot <- ggplot(data = HBVRun) +
 ggplotly(storage_plot)
 ```
 
-
-```{r}
-
-```
 
