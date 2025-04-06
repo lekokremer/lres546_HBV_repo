@@ -61,7 +61,7 @@ In the .csv imported below, we started by collecting the same SNOTEL data that y
 
 ```{r}
 # Import data
-indata <- read.csv("weighted_data_fool_HBV.csv")%>%
+indata <- read.csv("HBV_data/weighted_data_fool_HBV.csv")%>%
   mutate(date = ymd(date)) %>%
   rename(Q_m3_s = m3_s, Q_mm_day = mm_day, runoff_input.mm = input.mm )
 
@@ -452,45 +452,73 @@ Woohoo! We can now run our model and assess how well it is working!
 
 Now, let's see how well we can get it to work. The code below runs the model, produces a plot, and calculates the NSE based on discharge.
 
-
 ```{r}
-#when this term = 1, then triangular routing is invoked, or for no routing, routing = 0
-#if routing = 0 then MAXBAS doesn't do anything
-routing <- 0      
 
-#hard code parameters 
-params <- c(40,     #FCM ax soil moisture storage, field capacity
-            1,      #beta Shape coefficient governing fate of water input to soil moisture storage
-            0.3,    #LP Threshold for reduction of evap
-            0.4,    #SFCF Snowfall correction factor
-            -1.5,   #TT Threshold temperature
-            1,      #CFMAX Degree-day factor
-            0.05,   #k0 Recession constant (upper storage, near surface)
-            0.01,   #k1 Recession constant (upper storage)
-            0.001,  #k2 Recession constant (lower storage)
-            0,      #UZL Threshold for shallow storage
-            0,      #PERC Percolation, max flow from upper to lower storage
-            1       #MAXBAS base of the triangular routing function, days
-            )
+# set up the parameter vector
+model_params <- c(
+  1.05, # SCF snow correction factor [-] (e.g., 0.9-1.5);
+  1.80, # DDF degree day factor [mm/degC/timestep] (e.g., 0.0-5.0 mm/degC/day);
+  2, # Tr threshold temperature above which precipitation is rain [degC] (e.g., 1.0-3.0 degC);
+  0, # Ts threshold temperature below which precipitation is snow [degC] (e.g., -3.0-1.0 degC);
+  -0.336, # Tm threshold temperature above which melt starts [degC] (e.g., -2.0-2.0 degC);
+  0.2, # LPrat parameter related to the limit for potential evaporation [-] (e.g., 0.0-1.0);
+  121, # FC field capacity, i.e., max soil moisture storage [mm] (e.g., 0-600 mm);
+  2.52, # BETA the non linear parameter for runoff production [-] (e.g., 0.0-20.0);
+  0.473, # k0 storage coefficient for very fast response [timestep] (e.g., 0.0-2.0 days);
+  9.06, # k1 storage coefficient for fast response [timestep] (e.g., 2.0-30.0 days);
+  142, # k2 storage coefficient for slow response [timestep] (e.g., 30.0-250.0 days);
+  50.1, # lsuz threshold storage state, i.e., the very fast response start if exceeded [mm] (e.g., 1.0-100.0 mm);
+  2.38, # cperc constant percolation rate [mm/timestep] (e.g., 0.0-8.0 mm/day);
+  10, # bmax maximum base at low flows [timestep] (e.g., 0.0-30.0 days);
+  25 # croute free scaling parameter [timestep^2/mm] (e.g., 0.0-50.0 days^2/mm);
+)
 
-#Run the model
-Out <- HBV(params, P, Temp, PET, routing)
 
-#Add observed output
-Out <- bind_cols(Out, Qobs1)
+# set time period
+model_in <- indata %>%
+  filter(date >= as_date("2017-10-01") & date <= as_date("2022-09-30"))
+
+# set up the model
+## THIS IS THE ACTUAL MODEL EXECUTION
+modelRun <- TUWmodel(
+  prec = model_in$weighted_precip.mm, # precip input
+  airt = model_in$Tmean_c, # air temp input
+  ep = model_in$PET_mm, # pet input
+  area = 1, # one zone for the entire watershed
+  param = model_params # input model parameters
+)
+
+
+# get all outputs into a nice df
+HBVRun <- tibble(
+  Date = model_in$Date, # date
+  P_mm = modelRun$prec, # precip
+  Tair = modelRun$airt, # air temp
+  SWEobs = model_in$weighted_swe.mm, # observed swe
+  PET = modelRun$ep,# pet
+  Qobs = model_in$Q_mm_day, # observed discharge
+  Qsim = modelRun$q[1, ], # simulated discharge
+  Qsurf = modelRun$q0[1, ], # surface runoff
+  Qsubsurf = modelRun$q1[1, ], # subsurface flow
+  Qbase = modelRun$q2[1, ], # groundwater flow
+  Rain = modelRun$rain[1, ], # simulated rain
+  Snow = modelRun$snow[1, ], # simulated snowfall
+  Melt = modelRun$melt[1, ], # simulated melt
+  SWEsim = modelRun$swe[1, ], # simulated swe
+  Soilmoist = modelRun$moist[1, ], # simulated soil storage
+  AET = modelRun$eta[1, ], # simulated evapotranspiration
+  StorageUpper = modelRun$suz[1, ], # upper storage value
+  StorageLower = modelRun$slz[1, ] # lower storage value
+)
 
 #Trim out the warm up period
-OutTrim <- filter(Out, DATE >= mdy("01-01-2011"))
+OutTrim <- HBVRun %>% slice(366:n())
 
 #Calculate NSE
-NSE <- 1 - ((sum((OutTrim$q - OutTrim$WS_3) ^ 2)) / 
-                 sum((OutTrim$WS_3 - mean(OutTrim$WS_3)) ^ 2))
+NSE <- 1 - ((sum((OutTrim$Qsim - OutTrim$Qobs) ^ 2)) / 
+                 sum((OutTrim$Qobs - mean(OutTrim$Qobs)) ^ 2))
 
-#Create plot with NSE in title
-OutTrim %>% plot_ly(x = ~DATE) %>% 
-        add_trace(y = ~q, name = 'Modeled',  type = 'scatter', mode = 'lines') %>% 
-        add_trace(y = ~WS_3, name = 'Measured', type = 'scatter', mode = 'lines') %>% 
-        layout(title=paste("NSE: ", round(NSE,2)))
+print(NSE)
 ```
 
 ## Plot observed and model simulations
@@ -504,19 +532,32 @@ HBVRun <- as.data.frame(HBVRun)
 HBVRun$Date <- model_in$date
 str(HBVRun)
 
-# Overall runoff (Qsim and Qobs)
+# Round the NSE for display
+nse_label <- paste("NSE =", round(NSE, 3))
+
 q_plot <- ggplot(data = HBVRun) +
-  geom_line(aes(x = Date, y = Qobs, color = "Qobs")) + # Qobs
-  geom_line(aes(x = Date, y = Qsim, color = "Qsim")) + # Qsim
-  labs(x = {}, y = "Q (mm/day)", color = {}, title = "Qobs and Qsim")
+  geom_line(aes(x = Date, y = Qobs, color = "Qobs")) +  # Qobs
+  geom_line(aes(x = Date, y = Qsim, color = "Qsim")) +  # Qsim
+  annotate("text",
+           x = max(HBVRun$Date) - 100,  # Move label # days from the end
+           y = max(HBVRun$Qobs, na.rm = TRUE),
+           label = nse_label,
+           hjust = 1, vjust = 1.5, size = 5, fontface = "bold") +
+  labs(x = NULL, y = "Q (mm/day)", color = NULL, title = "Qobs and Qsim")
+
+
+# Make it interactive with plotly
 ggplotly(q_plot)
+
 ```
+
+### More plots
 
 ```{r}
 # Swe
 swe_plot <- ggplot(data = HBVRun) +
   geom_line(aes(x = Date, y = SWEobs, color = "SWEobs")) + # SWEobs
-  geom_line(aes(x = Date, y = SWEsim, color = "SWEsim")) + # SWEsim
+  geom_line(aes(BLANK)) + # SWEsim
   labs(x = {}, y = "SWE (mm)", color = {})
 ggplotly(swe_plot)
 ```
@@ -531,28 +572,3 @@ q_bucket_plot <- ggplot(data = HBVRun) +
   labs(x = {}, y = "Q (mm)", color = {}, title = "Q0, Q1, and Q2")
 ggplotly(q_bucket_plot)
 ```
-
-```{r}
-# PET and AET
-pet_plot <- ggplot(data = HBVRun) +
-  geom_line(aes(x = Date, y = PET, color = "PET")) + # PET
-  geom_line(aes(x = Date, y = AET, color = "AET")) + # AET
-  labs(x = {}, y = "Flux (mm)", color = {}, title = "PET and AET")
-ggplotly(pet_plot)
-```
-
-```{r}
-# Storages
-storage_plot <- ggplot(data = HBVRun) +
-  geom_line(aes(x = Date, y = Soilmoist, color = "Soil moisture storage")) + # soil moisture storage
-  geom_line(aes(x = Date, y = StorageUpper, color = "Upper storage")) + # upper storage
-  geom_line(aes(x = Date, y = StorageLower, color = "Lower storage")) + # lower storage
-  labs(x = {}, y = "Storage (mm)", color = {}, title = "Storages")
-ggplotly(storage_plot)
-```
-
-
-```{r}
-
-```
-
